@@ -8,6 +8,8 @@ from typing import Any, Dict, List
 
 from cachetools.ttl import TTLCache
 
+from freqtrade.configuration import TimeRange
+from freqtrade.data import history
 from freqtrade.exceptions import OperationalException
 from freqtrade.plugins.pairlist.IPairList import IPairList
 
@@ -106,6 +108,41 @@ class VolumePairList(IPairList):
         if self._min_value > 0:
             filtered_tickers = [
                     v for v in filtered_tickers if v[self._sort_key] > self._min_value]
+
+        # Pairlist generation for a past date.
+        past_date_str = self._config.get('timerange', None)
+        if past_date_str is not None:
+            if '-' not in past_date_str:
+                past_date_str += f'-{past_date_str}'
+            timerange = TimeRange.parse_timerange(past_date_str)
+            timerange.stopts += 24*60*60*1000
+            processed_pairs = []
+            data = history.load_data(
+                datadir=self._config['datadir'],
+                pairs=pairlist,
+                timeframe='1d',
+                timerange=timerange,
+                startup_candles=0,
+                fail_without_data=False,
+                data_format=self._config.get('dataformat_ohlcv', 'json'),
+            )
+            for pair, df in data.items():
+                volume = 0
+                processed_pairs.append(pair)
+                if not df.empty and int(df.iloc[0]['date'].timestamp()) == timerange.startts:
+                    volume = df.iloc[0]['volume']
+                tickers[pair]['quoteVolume'] = volume
+
+            since_ms = timerange.startts * 1000
+            for pair in pairlist:
+                volume = 0
+                if pair in processed_pairs:
+                    continue
+                candles = self._exchange.get_historic_ohlcv(pair, '1d', since_ms)
+                if candles:
+                    if candles[0][0] == since_ms:
+                        volume = candles[0][-1]
+                tickers[pair]['quoteVolume'] = volume
 
         sorted_tickers = sorted(filtered_tickers, reverse=True, key=lambda t: t[self._sort_key])
 
