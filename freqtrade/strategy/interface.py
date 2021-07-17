@@ -338,6 +338,32 @@ class IStrategy(ABC, HyperStrategyMixin):
 # END - Intended to be overridden by strategy
 ###
 
+    def gather_informative_pairs(self) -> ListPairsWithTimeframes:
+        """
+        Internal method which gathers all informative pairs (user or automatically defined).
+        """
+        informative_pairs = self.informative_pairs()
+        for attr_name in dir(self.__class__):
+            cls_attr = getattr(self.__class__, attr_name)
+            if not callable(cls_attr):
+                continue
+            if not getattr(cls_attr, '_is_informative', False):
+                continue
+            timeframe = getattr(cls_attr, '_timeframe', None)
+            asset = getattr(cls_attr, '_asset', None)
+            assert asset is not None
+            assert timeframe is not None
+            if asset:
+                if '/' in asset:
+                    pair = asset
+                else:
+                    pair = f'{asset.upper()}/{self.config["stake_currency"]}'
+                informative_pairs.append((pair, timeframe))
+            elif self.dp is not None:
+                for pair in self.dp.current_whitelist():
+                    informative_pairs.append((pair, timeframe))
+        return list(set(informative_pairs))
+
     def get_strategy_name(self) -> str:
         """
         Returns strategy class name
@@ -753,6 +779,16 @@ class IStrategy(ABC, HyperStrategyMixin):
         :return: a Dataframe with all mandatory indicators for the strategies
         """
         logger.debug(f"Populating indicators for pair {metadata.get('pair')}.")
+
+        # call populate_indicators_Nm() which were tagged with @informative decorator.
+        for attr_name in dir(self.__class__):
+            cls_attr = getattr(self.__class__, attr_name)
+            if not callable(cls_attr):
+                continue
+            if not getattr(cls_attr, '_is_informative', False):
+                continue
+            dataframe = cls_attr(self, dataframe, metadata)
+
         if self._populate_fun_len == 2:
             warnings.warn("deprecated - check out the Sample strategy to see "
                           "the current function headers!", DeprecationWarning)

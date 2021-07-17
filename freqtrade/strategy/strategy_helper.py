@@ -1,10 +1,18 @@
+import re
+from functools import wraps
+from typing import Any, Callable, Optional, Union
+
 import pandas as pd
+from mypy_extensions import KwArg
+from pandas import DataFrame
 
 from freqtrade.exchange import timeframe_to_minutes
 
 
 def merge_informative_pair(dataframe: pd.DataFrame, informative: pd.DataFrame,
-                           timeframe: str, timeframe_inf: str, ffill: bool = True) -> pd.DataFrame:
+                           timeframe: str, timeframe_inf: str, ffill: bool = True,
+                           append_timeframe: bool = True,
+                           date_column: str = 'date') -> pd.DataFrame:
     """
     Correctly merge informative samples to the original dataframe, avoiding lookahead bias.
 
@@ -24,6 +32,8 @@ def merge_informative_pair(dataframe: pd.DataFrame, informative: pd.DataFrame,
     :param timeframe: Timeframe of the original pair sample.
     :param timeframe_inf: Timeframe of the informative pair sample.
     :param ffill: Forwardfill missing values - optional but usually required
+    :param append_timeframe: Rename columns by appending timeframe.
+    :param date_column: A custom date column name.
     :return: Merged dataframe
     :raise: ValueError if the secondary timeframe is shorter than the dataframe timeframe
     """
@@ -32,25 +42,29 @@ def merge_informative_pair(dataframe: pd.DataFrame, informative: pd.DataFrame,
     minutes = timeframe_to_minutes(timeframe)
     if minutes == minutes_inf:
         # No need to forwardshift if the timeframes are identical
-        informative['date_merge'] = informative["date"]
+        informative['date_merge'] = informative[date_column]
     elif minutes < minutes_inf:
         # Subtract "small" timeframe so merging is not delayed by 1 small candle
         # Detailed explanation in https://github.com/freqtrade/freqtrade/issues/4073
         informative['date_merge'] = (
-            informative["date"] + pd.to_timedelta(minutes_inf, 'm') - pd.to_timedelta(minutes, 'm')
+            informative[date_column] + pd.to_timedelta(minutes_inf, 'm') -
+            pd.to_timedelta(minutes, 'm')
         )
     else:
         raise ValueError("Tried to merge a faster timeframe to a slower timeframe."
                          "This would create new rows, and can throw off your regular indicators.")
 
     # Rename columns to be unique
-    informative.columns = [f"{col}_{timeframe_inf}" for col in informative.columns]
+    date_merge = 'date_merge'
+    if append_timeframe:
+        date_merge = f'date_merge_{timeframe_inf}'
+        informative.columns = [f"{col}_{timeframe_inf}" for col in informative.columns]
 
     # Combine the 2 dataframes
     # all indicators on the informative sample MUST be calculated before this point
     dataframe = pd.merge(dataframe, informative, left_on='date',
-                         right_on=f'date_merge_{timeframe_inf}', how='left')
-    dataframe = dataframe.drop(f'date_merge_{timeframe_inf}', axis=1)
+                         right_on=date_merge, how='left')
+    dataframe = dataframe.drop(date_merge, axis=1)
 
     if ffill:
         dataframe = dataframe.ffill()
@@ -94,3 +108,83 @@ def stoploss_from_absolute(stop_rate: float, current_rate: float) -> float:
     :return: Positive stop loss value relative to current price
     """
     return 1 - (stop_rate / current_rate)
+
+
+def informative(timeframe: str, asset: Optional[str] = None,
+                fmt: Optional[Union[str, Callable[[KwArg(str)], str]]] = None,
+                ffill: bool = True) -> Callable[[Callable[[Any, DataFrame, dict], DataFrame]],
+                                                Callable[[Any, DataFrame, dict], DataFrame]]:
+    """
+    A decorator for populate_indicators_Nn(self, dataframe, metadata), allowing these functions to
+    define informative indicators.
+
+    Example usage:
+
+        @informative('1h')
+        def populate_indicators_1h(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+            dataframe['rsi'] = ta.RSI(dataframe, timeperiod=14)
+            return dataframe
+
+    :param timeframe: Informative timeframe. Must always be higher than strategy timeframe.
+    :param asset: Informative asset, for example BTC, BTC/USDT, ETH/BTC. Do not specify to use
+    current pair.
+    :param fmt: Column format (str) or column formatter (callable(name, asset, timeframe)). When not
+    specified, defaults to {asset}_{name}_{timeframe} if asset is specified, or {name}_{timeframe}
+    otherwise.
+    * {asset}: name of informative asset, provided in lower-case, with / replaced with _. Stake
+    currency is not included in this string.
+    * {name}: user-specified dataframe column name.
+    * {timeframe}: informative timeframe.
+    :param ffill: ffill dataframe after mering informative pair.
+    """
+    def decorator(fn: Callable[[Any, DataFrame, dict], DataFrame]):
+        @wraps(fn)
+        def wrapper(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+            nonlocal timeframe, asset, fmt
+            # Modifying variables inherited from parent scope poisons other wrapper instances!
+            this_asset = asset
+            this_fmt = fmt
+
+            # Default format.
+            if this_fmt is None:
+                this_fmt = '{name}_{timeframe}'
+                if this_asset:
+                    this_fmt = '{asset}_' + this_fmt
+
+            # Not specifying an asset will define informative dataframe for current pair.
+            if not this_asset:
+                this_asset = metadata['pair']
+            assert isinstance(this_asset, str)
+
+            # Not specifying quote currency will use stake currency.
+            if '/' not in this_asset:
+                this_asset = f'{asset}/{self.config["stake_currency"]}'
+
+            inf_metadata = {'pair': this_asset, 'timeframe': timeframe}
+            inf_dataframe = self.dp.get_pair_dataframe(this_asset, timeframe)
+            inf_dataframe = fn(self, inf_dataframe, inf_metadata)
+
+            # Clear stake currency from specified asset name.
+            fmt_asset = re.sub(rf'([^/])(/{self.config["stake_currency"]})?', r'\1',
+                               this_asset).lower()
+            # Non-stake quote currency will be kept in asset name, replace / separator with _.
+            fmt_asset = fmt_asset.replace('/', '_')
+            if callable(this_fmt):
+                formatter = this_fmt             # A custom user-specified formatter function.
+            else:
+                formatter = this_fmt.format      # A default string formatter.
+
+            inf_dataframe.rename(
+                columns=lambda name: formatter(name=name, asset=fmt_asset, timeframe=timeframe),
+                inplace=True)
+
+            date_column = formatter(name='date', asset=fmt_asset, timeframe=timeframe)
+            dataframe = merge_informative_pair(dataframe, inf_dataframe, self.timeframe, timeframe,
+                                               ffill=ffill, append_timeframe=False,
+                                               date_column=date_column)
+            return dataframe
+        setattr(wrapper, '_is_informative', True)
+        setattr(wrapper, '_timeframe', timeframe)
+        setattr(wrapper, '_asset', asset)
+        return wrapper
+    return decorator
