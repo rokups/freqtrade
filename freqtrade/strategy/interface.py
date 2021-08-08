@@ -132,6 +132,33 @@ class IStrategy(ABC, HyperStrategyMixin):
         self._last_candle_seen_per_pair: Dict[str, datetime] = {}
         super().__init__(config)
 
+        # Gather informative pairs from @informative-decorated methods.
+        self._extra_informative_pairs = []
+        for attr_name in dir(self.__class__):
+            cls_attr = getattr(self.__class__, attr_name)
+            if not callable(cls_attr):
+                continue
+            is_informative = getattr(cls_attr, '_is_informative', False)
+            # Type check is required because mocker would return a mock object that evaluates to
+            # True, confusing this code.
+            if not is_informative or not isinstance(is_informative, bool):
+                continue
+            timeframe = getattr(cls_attr, '_timeframe', None)
+            asset = getattr(cls_attr, '_asset', None)
+            if timeframe is None:
+                raise OperationalException('@informative decorator failed to define _timeframe '
+                                           'attribute.')
+            if asset:
+                pair = self._format_pair(asset)
+                self._extra_informative_pairs.append((pair, timeframe))
+            elif self.dp is not None:
+                for pair in self.dp.current_whitelist():
+                    self._extra_informative_pairs.append((pair, timeframe))
+
+    def _format_pair(self, pair: str) -> str:
+        return pair.format(stake_currency=self.config['stake_currency'],
+                           stake=self.config['stake_currency']).upper()
+
     @abstractmethod
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
@@ -343,25 +370,7 @@ class IStrategy(ABC, HyperStrategyMixin):
         Internal method which gathers all informative pairs (user or automatically defined).
         """
         informative_pairs = self.informative_pairs()
-        for attr_name in dir(self.__class__):
-            cls_attr = getattr(self.__class__, attr_name)
-            if not callable(cls_attr):
-                continue
-            if not getattr(cls_attr, '_is_informative', False):
-                continue
-            timeframe = getattr(cls_attr, '_timeframe', None)
-            asset = getattr(cls_attr, '_asset', None)
-            assert asset is not None
-            assert timeframe is not None
-            if asset:
-                if '/' in asset:
-                    pair = asset
-                else:
-                    pair = f'{asset.upper()}/{self.config["stake_currency"]}'
-                informative_pairs.append((pair, timeframe))
-            elif self.dp is not None:
-                for pair in self.dp.current_whitelist():
-                    informative_pairs.append((pair, timeframe))
+        informative_pairs += self._extra_informative_pairs
         return list(set(informative_pairs))
 
     def get_strategy_name(self) -> str:

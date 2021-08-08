@@ -706,10 +706,10 @@ In some situations it may be confusing to deal with stops relative to current ra
             return dataframe
 
         # Define BTC/STAKE informative pair. Available in populate_indicators and other methods as
-        # 'btc_rsi_1h'. You may ommit quote currency when specifying informative asset pair, if it
-        # is same as stake currency. Available in populate_indicators and other methods as
-        # 'btc_rsi_1h'.
-        @informative('1h', 'BTC')
+        # 'btc_rsi_1h'. Current stake currency should be specified as {stake} format variable 
+        # instead of hardcoding actual stake currency. Available in populate_indicators and other 
+        # methods as 'btc_rsi_1h'.
+        @informative('1h', 'BTC/{stake}')
         def populate_indicators_btc_1h(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
             dataframe['rsi'] = ta.RSI(dataframe, timeperiod=14)
             return dataframe
@@ -722,10 +722,17 @@ In some situations it may be confusing to deal with stops relative to current ra
             return dataframe
     
         # Define BTC/STAKE informative pair. A custom formatter may be specified for formatting
-        # column names. Available in populate_indicators and other methods as 'btc_rsi_upper'.
-        @informative('1h', 'BTC', '{name}')
+        # column names. Format string supports these format variables:
+        # * {asset} - full name of the asset, for example 'BTC/USDT'.
+        # * {asset_short} - short name of the asset, for example 'eth' when quote currency matches
+        #   stake currency or 'eth_btc' otherwise.
+        # * {name} - name of dataframe column.
+        # * {timeframe} - timeframe of informative dataframe.
+        # A callable `fmt(**kwargs) -> str` may be specified, to implement custom formatting.
+        # Available in populate_indicators and other methods as 'rsi_upper'.
+        @informative('1h', 'BTC/{stake}', '{name}')
         def populate_indicators_btc_1h_2(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-            dataframe['btc_rsi_upper'] = ta.RSI(dataframe, timeperiod=14)
+            dataframe['rsi_upper'] = ta.RSI(dataframe, timeperiod=14)
             return dataframe
     
         def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:

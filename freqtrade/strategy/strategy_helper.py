@@ -142,43 +142,47 @@ def informative(timeframe: str, asset: Optional[str] = None,
         def wrapper(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
             nonlocal timeframe, asset, fmt
             # Modifying variables inherited from parent scope poisons other wrapper instances!
-            this_asset = asset
-            this_fmt = fmt
+            asset_c = asset or ''
+            fmt_c = fmt
 
             # Default format.
-            if this_fmt is None:
-                this_fmt = '{name}_{timeframe}'
-                if this_asset:
-                    this_fmt = '{asset}_' + this_fmt
+            if fmt_c is None:
+                fmt_c = '{name}_{timeframe}'
+                if asset_c:
+                    fmt_c = '{asset}_' + fmt_c
 
-            # Not specifying an asset will define informative dataframe for current pair.
-            if not this_asset:
-                this_asset = metadata['pair']
-            assert isinstance(this_asset, str)
+            if asset_c:
+                # Insert stake currency if needed.
+                asset_c = self._format_pair(asset_c)
+            else:
+                # Not specifying an asset will define informative dataframe for current pair.
+                asset_c = metadata['pair']
 
-            # Not specifying quote currency will use stake currency.
-            if '/' not in this_asset:
-                this_asset = f'{asset}/{self.config["stake_currency"]}'
-
-            inf_metadata = {'pair': this_asset, 'timeframe': timeframe}
-            inf_dataframe = self.dp.get_pair_dataframe(this_asset, timeframe)
+            inf_metadata = {'pair': asset_c, 'timeframe': timeframe}
+            inf_dataframe = self.dp.get_pair_dataframe(asset_c, timeframe)
             inf_dataframe = fn(self, inf_dataframe, inf_metadata)
 
-            # Clear stake currency from specified asset name.
-            fmt_asset = re.sub(rf'([^/])(/{self.config["stake_currency"]})?', r'\1',
-                               this_asset).lower()
-            # Non-stake quote currency will be kept in asset name, replace / separator with _.
-            fmt_asset = fmt_asset.replace('/', '_')
-            if callable(this_fmt):
-                formatter = this_fmt             # A custom user-specified formatter function.
+            # Clear stake currency from specified asset name if it is a spot pair.
+            asset_short = asset_c
+            if '/' in asset_c:
+                asset_short = re.sub(rf'([^/])(/{self.config["stake_currency"]})?', r'\1',
+                                     asset_c)
+            asset_short = asset_short.lower()
+
+            # Non-stake quote currency will be kept in asset name, replace /- separators with _.
+            asset_short = re.sub('/-', '_', asset_short)
+            if callable(fmt_c):
+                formatter = fmt_c             # A custom user-specified formatter function.
             else:
-                formatter = this_fmt.format      # A default string formatter.
+                formatter = fmt_c.format      # A default string formatter.
 
             inf_dataframe.rename(
-                columns=lambda name: formatter(name=name, asset=fmt_asset, timeframe=timeframe),
+                columns=lambda name: formatter(name=name, asset_short=asset_short, asset=asset_c,
+                                               timeframe=timeframe),
                 inplace=True)
 
-            date_column = formatter(name='date', asset=fmt_asset, timeframe=timeframe)
+            date_column = formatter(name='date', asset_short=asset_short, asset=asset_c,
+                                    timeframe=timeframe)
             dataframe = merge_informative_pair(dataframe, inf_dataframe, self.timeframe, timeframe,
                                                ffill=ffill, append_timeframe=False,
                                                date_column=date_column)
