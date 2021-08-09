@@ -685,7 +685,7 @@ In some situations it may be confusing to deal with stops relative to current ra
 
 ??? Example "Fast and easy way to define informative pairs"
 
-    Most of the time we do not need power and flexibility offered by `merge_informative_pair()`, therefore we can use a decorator to quicly define informative pairs.
+    Most of the time we do not need power and flexibility offered by `merge_informative_pair()`, therefore we can use a decorator to quickly define informative pairs.
 
     ``` python
 
