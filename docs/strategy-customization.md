@@ -753,6 +753,9 @@ In some situations it may be confusing to deal with stops relative to current ra
     will overwrite previously defined method and not produce any errors due to limitations of Python programming language. In such cases you will find that indicators
     created in earlier-defined methods are not available in the dataframe. Carefully review method names and make sure they are unique!
 
+!!! Warning
+    Informative pairs defined using a legacy hyperopt format will not be executed. Please update your strategy if necessary.
+
 ## Additional data (Wallets)
 
 The strategy provides access to the `Wallets` object. This contains the current balances on the exchange.
