@@ -142,53 +142,51 @@ def informative(timeframe: str, asset: Optional[str] = None,
         def wrapper(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
             nonlocal timeframe, asset, fmt
             # Modifying variables inherited from parent scope poisons other wrapper instances!
-            asset_c = asset or ''
-            fmt_c = fmt
+            _asset = asset or ''
+            _fmt = fmt
 
             # Default format.
-            if fmt_c is None:
-                fmt_c = '{name}_{timeframe}'
-                if asset_c:
-                    fmt_c = '{asset}_' + fmt_c
+            if _fmt is None:
+                _fmt = '{name}_{timeframe}'
+                if _asset:
+                    _fmt = '{asset}_' + _fmt
 
-            if asset_c:
+            if _asset:
                 # Insert stake currency if needed.
-                asset_c = self._format_pair(asset_c)
+                _asset = self._format_pair(_asset)
             else:
                 # Not specifying an asset will define informative dataframe for current pair.
-                asset_c = metadata['pair']
+                _asset = metadata['pair']
 
-            inf_metadata = {'pair': asset_c, 'timeframe': timeframe}
-            inf_dataframe = self.dp.get_pair_dataframe(asset_c, timeframe)
+            inf_metadata = {'pair': _asset, 'timeframe': timeframe}
+            inf_dataframe = self.dp.get_pair_dataframe(_asset, timeframe)
             inf_dataframe = fn(self, inf_dataframe, inf_metadata)
 
             # Clear stake currency from specified asset name if it is a spot pair.
-            asset_short = asset_c
-            if '/' in asset_c:
+            asset_short = _asset
+            if '/' in _asset:
                 asset_short = re.sub(rf'([^/])(/{self.config["stake_currency"]})?', r'\1',
-                                     asset_c)
+                                     _asset)
             asset_short = asset_short.lower()
 
             # Non-stake quote currency will be kept in asset name, replace /- separators with _.
             asset_short = re.sub('/-', '_', asset_short)
-            if callable(fmt_c):
-                formatter = fmt_c             # A custom user-specified formatter function.
+            if callable(_fmt):
+                formatter = _fmt             # A custom user-specified formatter function.
             else:
-                formatter = fmt_c.format      # A default string formatter.
+                formatter = _fmt.format      # A default string formatter.
 
             inf_dataframe.rename(
-                columns=lambda name: formatter(name=name, asset_short=asset_short, asset=asset_c,
+                columns=lambda name: formatter(name=name, asset_short=asset_short, asset=_asset,
                                                timeframe=timeframe),
                 inplace=True)
 
-            date_column = formatter(name='date', asset_short=asset_short, asset=asset_c,
+            date_column = formatter(name='date', asset_short=asset_short, asset=_asset,
                                     timeframe=timeframe)
             dataframe = merge_informative_pair(dataframe, inf_dataframe, self.timeframe, timeframe,
                                                ffill=ffill, append_timeframe=False,
                                                date_column=date_column)
             return dataframe
-        setattr(wrapper, '_is_informative', True)
-        setattr(wrapper, '_timeframe', timeframe)
-        setattr(wrapper, '_asset', asset)
+        setattr(wrapper, '_informative', (asset, timeframe))
         return wrapper
     return decorator

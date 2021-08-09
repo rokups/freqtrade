@@ -133,27 +133,25 @@ class IStrategy(ABC, HyperStrategyMixin):
         super().__init__(config)
 
         # Gather informative pairs from @informative-decorated methods.
-        self._extra_informative_pairs = []
+        self._informative_pairs = []
+        self._informative_methods = []
         for attr_name in dir(self.__class__):
             cls_attr = getattr(self.__class__, attr_name)
             if not callable(cls_attr):
                 continue
-            is_informative = getattr(cls_attr, '_is_informative', False)
+            informative = getattr(cls_attr, '_informative', None)
             # Type check is required because mocker would return a mock object that evaluates to
             # True, confusing this code.
-            if not is_informative or not isinstance(is_informative, bool):
+            if informative is None or not isinstance(informative, tuple):
                 continue
-            timeframe = getattr(cls_attr, '_timeframe', None)
-            asset = getattr(cls_attr, '_asset', None)
-            if timeframe is None:
-                raise OperationalException('@informative decorator failed to define _timeframe '
-                                           'attribute.')
+            asset, timeframe = informative
+            self._informative_methods.append(cls_attr)
             if asset:
                 pair = self._format_pair(asset)
-                self._extra_informative_pairs.append((pair, timeframe))
+                self._informative_pairs.append((pair, timeframe))
             elif self.dp is not None:
                 for pair in self.dp.current_whitelist():
-                    self._extra_informative_pairs.append((pair, timeframe))
+                    self._informative_pairs.append((pair, timeframe))
 
     def _format_pair(self, pair: str) -> str:
         return pair.format(stake_currency=self.config['stake_currency'],
@@ -370,7 +368,7 @@ class IStrategy(ABC, HyperStrategyMixin):
         Internal method which gathers all informative pairs (user or automatically defined).
         """
         informative_pairs = self.informative_pairs()
-        informative_pairs += self._extra_informative_pairs
+        informative_pairs += self._informative_pairs
         return list(set(informative_pairs))
 
     def get_strategy_name(self) -> str:
@@ -790,13 +788,8 @@ class IStrategy(ABC, HyperStrategyMixin):
         logger.debug(f"Populating indicators for pair {metadata.get('pair')}.")
 
         # call populate_indicators_Nm() which were tagged with @informative decorator.
-        for attr_name in dir(self.__class__):
-            cls_attr = getattr(self.__class__, attr_name)
-            if not callable(cls_attr):
-                continue
-            if not getattr(cls_attr, '_is_informative', False):
-                continue
-            dataframe = cls_attr(self, dataframe, metadata)
+        for populate_informative in self._informative_methods:
+            dataframe = populate_informative(self, dataframe, metadata)
 
         if self._populate_fun_len == 2:
             warnings.warn("deprecated - check out the Sample strategy to see "
