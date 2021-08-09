@@ -681,6 +681,9 @@ In some situations it may be confusing to deal with stops relative to current ra
 
 ### *@informative()*
 
+In most common case it is possible to easily define informative pairs by using a decorator. All decorated `populate_indicators_*` methods run in isolation,
+not having access to data from other informative pairs, in the end all informative dataframes are merged and passed to main `populate_indicators()` method.
+
 ??? Example "Fast and easy way to define informative pairs"
 
     Most of the time we do not need power and flexibility offered by `merge_informative_pair()`, therefore we can use a decorator to quickly define informative pairs.
