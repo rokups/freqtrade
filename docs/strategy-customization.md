@@ -679,8 +679,6 @@ In some situations it may be confusing to deal with stops relative to current ra
 
     ```
 
-    Full examples can be found in the [Custom stoploss](strategy-advanced.md#custom-stoploss) section of the Documentation.
-
 ### *@informative()*
 
 ??? Example "Fast and easy way to define informative pairs"
