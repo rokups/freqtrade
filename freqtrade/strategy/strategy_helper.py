@@ -6,6 +6,7 @@ import pandas as pd
 from mypy_extensions import KwArg
 from pandas import DataFrame
 
+from freqtrade.exceptions import OperationalException
 from freqtrade.exchange import timeframe_to_minutes
 
 
@@ -147,9 +148,9 @@ def informative(timeframe: str, asset: Optional[str] = None,
 
             # Default format.
             if _fmt is None:
-                _fmt = '{name}_{timeframe}'
+                _fmt = '{column}_{timeframe}'
                 if _asset:
-                    _fmt = '{asset}_' + _fmt
+                    _fmt = '{base_lower}_' + _fmt
 
             if _asset:
                 # Insert stake currency if needed.
@@ -162,27 +163,28 @@ def informative(timeframe: str, asset: Optional[str] = None,
             inf_dataframe = self.dp.get_pair_dataframe(_asset, timeframe)
             inf_dataframe = fn(self, inf_dataframe, inf_metadata)
 
-            # Clear stake currency from specified asset name if it is a spot pair.
-            asset_short = _asset
             if '/' in _asset:
-                asset_short = re.sub(rf'([^/])(/{self.config["stake_currency"]})?', r'\1',
-                                     _asset)
-            asset_short = asset_short.lower()
+                base, quote = _asset.split('/')
+            else:
+                raise OperationalException('Not implemented.')
 
-            # Non-stake quote currency will be kept in asset name, replace /- separators with _.
-            asset_short = re.sub('/-', '_', asset_short)
             if callable(_fmt):
                 formatter = _fmt             # A custom user-specified formatter function.
             else:
                 formatter = _fmt.format      # A default string formatter.
 
-            inf_dataframe.rename(
-                columns=lambda name: formatter(name=name, asset_short=asset_short, asset=_asset,
-                                               timeframe=timeframe),
-                inplace=True)
+            fmt_args = {
+                'base': base,
+                'quote': quote,
+                'base_lower': base.lower(),
+                'quote_lower': quote.lower(),
+                'asset': _asset,
+                'timeframe': timeframe,
+            }
+            inf_dataframe.rename(columns=lambda column: formatter(column=column, **fmt_args),
+                                 inplace=True)
 
-            date_column = formatter(name='date', asset_short=asset_short, asset=_asset,
-                                    timeframe=timeframe)
+            date_column = formatter(column='date', **fmt_args)
             dataframe = merge_informative_pair(dataframe, inf_dataframe, self.timeframe, timeframe,
                                                ffill=ffill, append_timeframe=False,
                                                date_column=date_column)
