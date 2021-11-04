@@ -26,10 +26,23 @@ class Ftx(Exchange):
         Check if the market symbol is tradable by Freqtrade.
         Default checks + check if pair is spot pair (no futures trading yet).
         """
+        # BEGIN Futures/leverage
+        # Allow *-PERP pairs to be traded.
+        if market.get('future', False):
+            return True
+        # END Futures/leverage
+
         parent_check = super().market_is_tradable(market)
 
         return (parent_check and
                 market.get('spot', False) is True)
+
+    # BEGIN Futures/leverage
+    def update_leverage(self, leverage):
+        if leverage:
+            leverage = min(20, max(1, leverage))
+            self._api.private_post_account_leverage({'leverage': leverage})
+    # END Futures/leverage
 
     def stoploss_adjust(self, stop_loss: float, order: Dict) -> bool:
         """

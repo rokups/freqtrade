@@ -74,6 +74,10 @@ class Wallets:
         else:
             tot_profit = LocalTrade.total_profit
         tot_in_trades = sum([trade.stake_amount for trade in open_trades])
+        # BEGIN Futures/leverage
+        # Trade stake is leveraged
+        tot_in_trades /= self._config.get('leverage', 1)
+        # END Futures/leverage
 
         current_stake = self.start_cap + tot_profit - tot_in_trades
         _wallets[self._config['stake_currency']] = Wallet(
@@ -244,6 +248,13 @@ class Wallets:
             return 0
 
         max_stake_amount = self.get_available_stake_amount()
+
+        # BEGIN Futures/leverage
+        # Increase trade stake by leverage multiplier.
+        # This is not correct, should be something that works with available collateral amount.
+        max_stake_amount *= self._config.get('leverage', 1)
+        stake_amount *= self._config.get('leverage', 1)
+        # END Futures/leverage
 
         if min_stake_amount > max_stake_amount:
             if self._log:

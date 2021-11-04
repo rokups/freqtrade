@@ -133,6 +133,12 @@ class FreqtradeBot(LoggingMixin):
         performs startup tasks
         """
         self.rpc.startup_messages(self.config, self.pairlists, self.protections)
+
+        # BEGIN Futures/leverage
+        # Update account leverage if needed.
+        self.exchange.update_leverage(self.config.get('leverage', 1))
+        # END Futures/leverage
+
         if not self.edge:
             # Adjust stoploss if it was changed
             Trade.stoploss_reinitialization(self.strategy.stoploss)

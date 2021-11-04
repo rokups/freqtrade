@@ -911,6 +911,24 @@ class Exchange:
 
         try:
             balances = self._api.fetch_balance()
+
+            # BEGIN Futures/leverage
+            # Selling future contracts would be impossible if we do not fake having asset.
+            from freqtrade.persistence.models import Trade
+            for t in Trade.get_open_trades():
+                if t.pair not in self._api.markets_by_id:
+                    continue
+
+                market = self._api.markets_by_id[t.pair]
+                quote = market["quote"]
+                base = market["base"]
+                if quote != self._config["stake_currency"]:
+                    continue
+                if not market['future']:
+                    continue
+                balances[base] = {"free": float(t.amount), "used": 0, "total": float(t.amount)}
+            # END Futures/leverage
+
             # Remove additional info from ccxt results
             balances.pop("info", None)
             balances.pop("free", None)
@@ -1527,6 +1545,11 @@ class Exchange:
         return asyncio.get_event_loop().run_until_complete(
             self._async_get_trade_history(pair=pair, since=since,
                                           until=until, from_id=from_id))
+
+    # BEGIN Futures/leverage
+    def update_leverage(self, leverage):
+        pass
+    # END Futures/leverage
 
 
 def is_exchange_known_ccxt(exchange_name: str, ccxt_module: CcxtModuleType = None) -> bool:

@@ -84,8 +84,8 @@ def _create_and_merge_informative_pair(strategy, dataframe: DataFrame, metadata:
         base, quote = asset.split('/')
     else:
         # When futures are supported this may need reevaluation.
-        # base, quote = asset, ''
-        raise OperationalException('Not implemented.')
+        base, quote = asset, ''
+        # raise OperationalException('Not implemented.')
 
     # Default format. This optimizes for the common case: informative pairs using same stake
     # currency. When quote currency matches stake currency, column name will omit base currency.
