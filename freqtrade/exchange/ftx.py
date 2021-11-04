@@ -39,9 +39,33 @@ class Ftx(Exchange):
 
     # BEGIN Futures/leverage
     def update_leverage(self, leverage):
+        if self._config.get('dry_run', True):
+            return
         if leverage:
             leverage = min(20, max(1, leverage))
             self._api.private_post_account_leverage({'leverage': leverage})
+
+    def update_liquidation_price_stoploss(self):
+        if self._config.get('dry_run', True):
+            return
+        from freqtrade.persistence.models import Trade
+        from freqtrade.strategy import stoploss_from_absolute
+        try:
+            result = self._api.private_get_positions()
+        except Exception as e:
+            logger.exception(e)
+            return
+        if result['success']:
+            for p in result['result']:
+                for t in Trade.get_open_trades():
+                    # assert isinstance(t, Trade)
+                    if p.get('future', None) == t.pair:
+                        liquidation_price = float(p['estimatedLiquidationPrice'])
+                        if liquidation_price > 0:
+                            current_rate = self.get_rate(t.pair, False, 'buy')
+                            new_stoploss = stoploss_from_absolute(liquidation_price, current_rate)
+                            new_stoploss += 0.001   # Place stop a tiny bit above liquidation price
+                            t.adjust_stop_loss(current_rate, new_stoploss)
     # END Futures/leverage
 
     def stoploss_adjust(self, stop_loss: float, order: Dict) -> bool:

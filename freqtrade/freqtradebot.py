@@ -168,6 +168,10 @@ class FreqtradeBot(LoggingMixin):
         self.dataprovider.refresh(self.pairlists.create_pair_list(self.active_pair_whitelist),
                                   self.strategy.gather_informative_pairs())
 
+        # BEGIN Futures/leverage
+        self.exchange.update_liquidation_price_stoploss()
+        # END Futures/leverage
+
         strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)()
 
         self.strategy.analyze(self.active_pair_whitelist)

@@ -1549,6 +1549,9 @@ class Exchange:
     # BEGIN Futures/leverage
     def update_leverage(self, leverage):
         pass
+
+    def update_liquidation_price_stoploss(self):
+        pass
     # END Futures/leverage
 
 
