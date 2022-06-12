@@ -1,5 +1,6 @@
 """ FTX exchange subclass """
 import logging
+import sys
 from typing import Any, Dict, List, Tuple
 
 import ccxt
@@ -31,6 +32,7 @@ class Ftx(Exchange):
         # TradingMode.SPOT always supported and not required in this list
         # (TradingMode.MARGIN, MarginMode.CROSS),
         # (TradingMode.FUTURES, MarginMode.CROSS)
+        (TradingMode.FUTURES, MarginMode.ISOLATED)
     ]
 
     def stoploss_adjust(self, stop_loss: float, order: Dict, side: str) -> bool:
@@ -167,3 +169,18 @@ class Ftx(Exchange):
         if order['type'] == 'stop':
             return safe_value_fallback2(order, order, 'id_stop', 'id')
         return order['id']
+
+    def load_leverage_tiers(self) -> Dict[str, List[Dict]]:
+        self._api.has['fetchMarketLeverageTiers'] = True
+        return super().load_leverage_tiers()
+
+    def get_market_leverage_tiers(self, symbol) -> List[Dict]:
+        return [{
+            "tier": 1,
+            "notionalCurrency": self._config['stake_currency'],
+            "minNotional": 0,
+            "maxNotional": sys.maxsize,
+            "maintenanceMarginRate": 0.06,
+            "maxLeverage": 20,
+            "info": {}
+        }]
